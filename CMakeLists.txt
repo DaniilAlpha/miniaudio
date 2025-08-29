@@ -523,7 +523,7 @@ install(FILES miniaudio.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/miniaudio)
 
 target_include_directories(miniaudio PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options    (miniaudio PRIVATE ${COMPILE_OPTIONS})
-target_compile_definitions(miniaudio PRIVATE ${COMPILE_DEFINES})
+target_compile_definitions(miniaudio PUBLIC ${COMPILE_DEFINES})
 
 
 # Extra Backends
@@ -783,7 +783,7 @@ if(MINIAUDIO_BUILD_TESTS)
 
     add_miniaudio_test(miniaudio_filtering filtering/filtering.c)
     add_test(NAME miniaudio_filtering COMMAND miniaudio_filtering ${CMAKE_CURRENT_SOURCE_DIR}/data/16-44100-stereo.flac)
-    
+
     add_miniaudio_test(miniaudio_generation generation/generation.c)
     add_test(NAME miniaudio_generation COMMAND miniaudio_generation)
 endif()
@@ -809,7 +809,7 @@ if (MINIAUDIO_BUILD_EXAMPLES)
         message(STATUS "miniaudio_libvorbis is disabled. Vorbis support is disabled in miniaudio_custom_decoder_engine.")
     endif()
     if(HAS_LIBOPUS)
-    target_link_libraries(miniaudio_custom_decoder_engine PRIVATE libopus_interface)
+        target_link_libraries(miniaudio_custom_decoder_engine PRIVATE libopus_interface)
     else()
         target_compile_definitions(miniaudio_custom_decoder_engine PRIVATE MA_NO_LIBOPUS)
         message(STATUS "miniaudio_libopus is disabled. Opus support is disabled in miniaudio_custom_decoder_engine.")
