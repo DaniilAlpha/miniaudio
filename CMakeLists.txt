@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.10)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(IOS TRUE)
+endif()
+cmake_minimum_required(VERSION 3.18)
 
 # Extract version from miniaudio.h
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio.h" MINIAUDIO_HEADER_CONTENTS)
@@ -10,7 +13,13 @@ string(REGEX MATCH "#define MA_VERSION_REVISION[ \t]+([0-9]+)" _revision_match "
 set(MA_VERSION_REVISION "${CMAKE_MATCH_1}")
 set(MINIAUDIO_VERSION "${MA_VERSION_MAJOR}.${MA_VERSION_MINOR}.${MA_VERSION_REVISION}")
 
-project(miniaudio VERSION ${MINIAUDIO_VERSION})
+if(IOS)
+    set(LANGS OBJC)
+    set_source_files_properties(miniaudio.c PROPERTIES LANGUAGE OBJC)
+else()
+    set(LANGS C CXX)
+endif()
+project(miniaudio VERSION ${MINIAUDIO_VERSION} LANGUAGES ${LANGS})
 
 
 # Options
@@ -480,7 +489,7 @@ if (UNIX)
             list(APPEND COMMON_LINK_LIBRARIES ${LIB_DL})  # For dlopen(), etc. Most compilers will link to this by default, but some may not.
         endif()
     endif()
-    
+
     find_library(LIB_PTHREAD NAMES pthread)
     if(LIB_PTHREAD)
         list(APPEND COMMON_LINK_LIBRARIES ${LIB_PTHREAD}) # Some compilers will not link to pthread by default so list it here just in case.
@@ -576,7 +585,7 @@ if (NOT MINIAUDIO_NO_EXTRA_NODES)
             extras/nodes/ma_${name}_node/ma_${name}_node.c
             extras/nodes/ma_${name}_node/ma_${name}_node.h
         )
-        
+
         set(libs "${LIBS_TO_INSTALL}")
 
         list(APPEND libs miniaudio_${name}_node)
