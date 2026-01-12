@@ -33798,13 +33798,13 @@ typedef Boolean (* ma_CFStringGetCString_proc)(CFStringRef theString, char* buff
 typedef void    (* ma_CFRelease_proc         )(CFTypeRef cf);
 
 /* CoreAudio */
-#if defined(MA_APPLE_DESKTOP)
+// #if defined(MA_APPLE_DESKTOP)
 typedef OSStatus (* ma_AudioObjectGetPropertyData_proc       )(AudioObjectID inObjectID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* ioDataSize, void* outData);
 typedef OSStatus (* ma_AudioObjectGetPropertyDataSize_proc   )(AudioObjectID inObjectID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize);
 typedef OSStatus (* ma_AudioObjectSetPropertyData_proc       )(AudioObjectID inObjectID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData);
 typedef OSStatus (* ma_AudioObjectAddPropertyListener_proc   )(AudioObjectID inObjectID, const AudioObjectPropertyAddress* inAddress, AudioObjectPropertyListenerProc inListener, void* inClientData);
 typedef OSStatus (* ma_AudioObjectRemovePropertyListener_proc)(AudioObjectID inObjectID, const AudioObjectPropertyAddress* inAddress, AudioObjectPropertyListenerProc inListener, void* inClientData);
-#endif
+// #endif
 
 /* AudioToolbox */
 typedef AudioComponent (* ma_AudioComponentFindNext_proc       )(AudioComponent inComponent, const AudioComponentDescription* inDesc);
