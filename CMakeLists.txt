@@ -709,6 +709,10 @@ if(MINIAUDIO_NO_RUNTIME_LINKING)
     endif()
 endif()
 
+if(IOS)
+    target_link_libraries(miniaudio -framework AVFoundation)
+endif()
+
 # Tests
 #
 # All tests are compiled as a single translation unit. There is no need to add miniaudio as a link library.
@@ -873,3 +877,4 @@ install(TARGETS ${LIBS_TO_INSTALL}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
