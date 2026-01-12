@@ -1,5 +1,5 @@
 /*
-USAGE: deviceio [input/output file] [mode] [backend] [waveform] [noise] [--auto]
+USAGE: deviceio [input/output file] [mode] [backend] [waveform] [noise] [threading mode] [exclusive] [--playback-device [index]] [--capture-device [index]] [--channels [count]] [--rate [sample_rate]] [--periods [count]] [--period-size [frames]] [--detailed-info] [--auto]
 
 In playback mode the input file is optional, in which case a waveform or noise source will be used instead. For capture and loopback modes
 it must specify an output parameter, and must be specified. In duplex mode it is optional, but if specified will be an output file that
@@ -19,6 +19,7 @@ will receive the captured audio.
     sndio
     audio4
     oss
+    pipewire
     pulseaudio or pulse
     alsa
     jack
@@ -27,7 +28,6 @@ will receive the captured audio.
     webaudio
     null
     sdl2
-    pipewire
 
 "waveform" can be one of the following:
     sine
@@ -40,11 +40,17 @@ will receive the captured audio.
     pink
     brownian or brown
 
+"threading mode" can be one of the following:
+    multi-threaded or multithreaded (default)    
+    single-threaded or singlethreaded
+    
+
 If multiple backends are specified, the priority will be based on the order in which you specify them. If multiple waveform or noise types
 are specified the last one on the command line will have priority.
 */
+/*#define MA_DEBUG_OUTPUT*/
 #include "../common/common.c"
-#include "../../extras/backends/sdl/backend_sdl.c"
+#include "../../extras/backends/sdl2/miniaudio_sdl2.c"
 
 #if defined(MA_TESTS_INCLUDE_PIPEWIRE)
 #include "../../extras/backends/pipewire/miniaudio_pipewire.h"
@@ -73,6 +79,10 @@ static struct
     ma_bool32 hasEncoder;   /* Used for duplex mode to determine whether or not audio data should be written to a file. */
     ma_bool32 wantsToClose;
     ma_uint64 runTimeInFrames;  /* Only used in auto mode. */
+    ma_device_info* pPlaybackDevices;
+    ma_uint32 playbackDeviceCount;
+    ma_device_info* pCaptureDevices;
+    ma_uint32 captureDeviceCount;
 } g_State;
 
 const char* get_mode_description(ma_device_type deviceType)
@@ -189,7 +199,7 @@ ma_bool32 try_parse_backend(const char* arg, ma_device_backend_config* pBackends
         goto done;
     }
     if (strcmp(arg, "sdl2") == 0) {
-        pBackends[backendCount++] = ma_device_backend_config_init(ma_device_backend_sdl, NULL);
+        pBackends[backendCount++] = ma_device_backend_config_init(ma_device_backend_sdl2, NULL);
         goto done;
     }
     if (strcmp(arg, "pipewire") == 0) {
@@ -256,6 +266,23 @@ ma_bool32 try_parse_noise(const char* arg, ma_noise_type* pNoiseType)
     return MA_FALSE;
 }
 
+ma_bool32 try_parse_threading_mode(const char* arg, ma_threading_mode* pThreadingMode)
+{
+    MA_ASSERT(arg              != NULL);
+    MA_ASSERT(pThreadingMode   != NULL);
+
+    if (strcmp(arg, "multi-threaded") == 0 || strcmp(arg, "multithreaded") == 0) {
+        *pThreadingMode = MA_THREADING_MODE_MULTI_THREADED;
+        return MA_TRUE;
+    }
+    if (strcmp(arg, "single-threaded") == 0 || strcmp(arg, "singlethreaded") == 0) {
+        *pThreadingMode = MA_THREADING_MODE_SINGLE_THREADED;
+        return MA_TRUE;
+    }
+
+    return MA_FALSE;
+}
+
 void print_enabled_backends(void)
 {
     ma_device_backend_config pStockBackends[MA_MAX_STOCK_DEVICE_BACKENDS];
@@ -275,54 +302,69 @@ void print_enabled_backends(void)
         }
     }
 
+    if (ma_device_backend_sdl2 != NULL) {
+        printf("    SDL2\n");
+    }
+
+    #if defined(MA_TESTS_INCLUDE_PIPEWIRE)
+    {
+        if (ma_device_backend_pipewire != NULL) {
+            printf("    PipeWire\n");
+        }
+    }
+    #endif
+
+
     printf("\n");
 }
 
-ma_result print_device_info(const ma_device_info* pDeviceInfo)
+ma_result print_device_info(const ma_device_info* pDeviceInfo, ma_bool32 printDetailedInfo)
 {
-    ma_uint32 iFormat;
-
     MA_ASSERT(pDeviceInfo != NULL);
 
-    printf("%s\n", pDeviceInfo->name);
-    printf("    Default:      %s\n", (pDeviceInfo->isDefault) ? "Yes" : "No");
-    printf("    Format Count: %d\n", pDeviceInfo->nativeDataFormatCount);
-    for (iFormat = 0; iFormat < pDeviceInfo->nativeDataFormatCount; ++iFormat) {
-        printf("        %s, %d, %d\n", ma_get_format_name(pDeviceInfo->nativeDataFormats[iFormat].format), pDeviceInfo->nativeDataFormats[iFormat].channels, pDeviceInfo->nativeDataFormats[iFormat].sampleRate);
+    /* It's been useful to be able to see the ID of the device when debugging. */
+    if (g_State.context.pVTable == ma_device_backend_alsa) {
+        printf("[%s] %s\n", pDeviceInfo->id.alsa, pDeviceInfo->name);
+    } else {
+        printf("%s\n", pDeviceInfo->name);
+    }
+
+    if (printDetailedInfo) {
+        ma_uint32 iFormat;
+
+        printf("    Default:      %s\n", (pDeviceInfo->isDefault) ? "Yes" : "No");
+        printf("    Format Count: %d\n", pDeviceInfo->nativeDataFormatCount);
+        for (iFormat = 0; iFormat < pDeviceInfo->nativeDataFormatCount; ++iFormat) {
+            printf("        %s, %d, %d\n", ma_get_format_name(pDeviceInfo->nativeDataFormats[iFormat].format), pDeviceInfo->nativeDataFormats[iFormat].channels, pDeviceInfo->nativeDataFormats[iFormat].sampleRate);
+        }
     }
 
     return MA_SUCCESS;
 }
 
-ma_result enumerate_devices(ma_context* pContext)
+ma_result enumerate_devices(ma_bool32 printDetailedInfo)
 {
     ma_result result;
-    ma_device_info* pPlaybackDevices;
-    ma_uint32 playbackDeviceCount;
-    ma_device_info* pCaptureDevices;
-    ma_uint32 captureDeviceCount;
     ma_uint32 iDevice;
 
-    MA_ASSERT(pContext != NULL);
-
-    result = ma_context_get_devices(pContext, &pPlaybackDevices, &playbackDeviceCount, &pCaptureDevices, &captureDeviceCount);
+    result = ma_context_get_devices(&g_State.context, &g_State.pPlaybackDevices, &g_State.playbackDeviceCount, &g_State.pCaptureDevices, &g_State.captureDeviceCount);
     if (result != MA_SUCCESS) {
         return result;
     }
 
     printf("Playback Devices\n");
     printf("----------------\n");
-    for (iDevice = 0; iDevice < playbackDeviceCount; iDevice += 1) {
+    for (iDevice = 0; iDevice < g_State.playbackDeviceCount; iDevice += 1) {
         printf("%d: ", iDevice);
-        print_device_info(&pPlaybackDevices[iDevice]);
+        print_device_info(&g_State.pPlaybackDevices[iDevice], printDetailedInfo);
     }
     printf("\n");
 
     printf("Capture Devices\n");
     printf("---------------\n");
-    for (iDevice = 0; iDevice < captureDeviceCount; iDevice += 1) {
+    for (iDevice = 0; iDevice < g_State.captureDeviceCount; iDevice += 1) {
         printf("%d: ", iDevice);
-        print_device_info(&pCaptureDevices[iDevice]);
+        print_device_info(&g_State.pCaptureDevices[iDevice], printDetailedInfo);
     }
     printf("\n");
 
@@ -365,6 +407,16 @@ void on_notification(const ma_device_notification* pNotification)
         case ma_device_notification_type_interruption_ended:
         {
             printf("Interruption Ended\n");
+        } break;
+
+        case ma_device_notification_type_unlocked:
+        {
+            printf("Unlocked\n");
+        } break;
+
+        case ma_device_notification_type_errored:
+        {
+            printf("Errored\n");
         } break;
 
         default: break;
@@ -430,16 +482,23 @@ int main(int argc, char** argv)
     ma_uint32 backendCount = 0;
     ma_context_config contextConfig;
     ma_device_type deviceType = ma_device_type_playback;
+    ma_share_mode shareMode = ma_share_mode_shared;
     ma_format deviceFormat = ma_format_unknown;
     ma_uint32 deviceChannels = 0;
     ma_uint32 deviceSampleRate = 0;
+    ma_uint32 devicePeriods = 0;
+    ma_uint32 devicePeriodSizeInFrames = 0;
     ma_device_config deviceConfig;
     ma_waveform_type waveformType = ma_waveform_type_sine;
     ma_noise_type noiseType = ma_noise_type_white;
+    ma_threading_mode threadingMode = MA_THREADING_MODE_MULTI_THREADED;
+    int playbackDeviceIndex = -1;
+    int captureDeviceIndex = -1;
     const char* pFilePath = NULL;  /* Input or output file path, depending on the mode. */
     ma_bool32 enumerate = MA_TRUE;
     ma_bool32 interactive = MA_TRUE;
     ma_device_backend_info backendInfo;
+    ma_bool32 printDetailedInfo = MA_FALSE;
 
     /* Default to a sine wave if nothing is passed into the command line. */
     waveformType = ma_waveform_type_sine;
@@ -451,6 +510,71 @@ int main(int argc, char** argv)
             interactive = MA_FALSE;
             continue;
         }
+
+        if (strcmp(argv[iarg], "--playback-device") == 0) {
+            if (iarg + 1 < argc) {
+                playbackDeviceIndex = atoi(argv[iarg + 1]);
+                iarg += 1;
+            }
+
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "--capture-device") == 0) {
+            if (iarg + 1 < argc) {
+                captureDeviceIndex = atoi(argv[iarg + 1]);
+                iarg += 1;
+            }
+
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "--channels") == 0) {
+            if (iarg + 1 < argc) {
+                deviceChannels = (ma_uint32)atoi(argv[iarg + 1]);
+                iarg += 1;
+            }
+
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "--rate") == 0) {
+            if (iarg + 1 < argc) {
+                deviceSampleRate = (ma_uint32)atoi(argv[iarg + 1]);
+                iarg += 1;
+            }
+
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "--periods") == 0) {
+            if (iarg + 1 < argc) {
+                devicePeriods = (ma_uint32)atoi(argv[iarg + 1]);
+                iarg += 1;
+            }
+
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "--period-size") == 0) {
+            if (iarg + 1 < argc) {
+                devicePeriodSizeInFrames = (ma_uint32)atoi(argv[iarg + 1]);
+                iarg += 1;
+            }
+
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "--detailed-info") == 0) {
+            printDetailedInfo = MA_TRUE;
+            continue;
+        }
+
+        if (strcmp(argv[iarg], "exclusive") == 0) {
+            shareMode = ma_share_mode_exclusive;
+            continue;
+        }
+
 
         /* mode */
         if (try_parse_mode(argv[iarg], &deviceType)) {
@@ -471,6 +595,11 @@ int main(int argc, char** argv)
         /* noise */
         if (try_parse_noise(argv[iarg], &noiseType)) {
             g_State.sourceType = source_type_noise;
+            continue;
+        }
+
+        /* threading mode */
+        if (try_parse_threading_mode(argv[iarg], &threadingMode)) {
             continue;
         }
 
@@ -500,8 +629,8 @@ int main(int argc, char** argv)
     printf("\n");
 
     /* Enumerate if required. */
-    if (enumerate) {
-        enumerate_devices(&g_State.context);
+    if (enumerate || playbackDeviceIndex != -1 || captureDeviceIndex != -1) {
+        enumerate_devices(printDetailedInfo);
     }
 
     /*
@@ -521,13 +650,35 @@ int main(int argc, char** argv)
     }
 
     deviceConfig = ma_device_config_init(deviceType);
-    deviceConfig.playback.format      = deviceFormat;
-    deviceConfig.playback.channels    = deviceChannels;
-    deviceConfig.capture.format       = deviceFormat;
-    deviceConfig.capture.channels     = deviceChannels;
-    deviceConfig.sampleRate           = deviceSampleRate;
-    deviceConfig.dataCallback         = on_data;
-    deviceConfig.notificationCallback = on_notification;
+    deviceConfig.playback.shareMode       = shareMode;
+    deviceConfig.capture.shareMode        = shareMode;
+    deviceConfig.threadingMode            = threadingMode;
+    deviceConfig.playback.format          = deviceFormat;
+    deviceConfig.playback.channels        = deviceChannels;
+    deviceConfig.capture.format           = deviceFormat;
+    deviceConfig.capture.channels         = deviceChannels;
+    deviceConfig.sampleRate               = deviceSampleRate;
+    deviceConfig.periods                  = devicePeriods;
+    deviceConfig.periodSizeInFrames       = devicePeriodSizeInFrames;
+    deviceConfig.dataCallback             = on_data;
+    deviceConfig.notificationCallback     = on_notification;
+
+    if (playbackDeviceIndex != -1) {
+        if (playbackDeviceIndex < (int)g_State.playbackDeviceCount) {
+            deviceConfig.playback.pDeviceID = &g_State.pPlaybackDevices[playbackDeviceIndex].id;
+        } else {
+            printf("Invalid playback device index %d. Using default device.\n", playbackDeviceIndex);
+        }
+    }
+
+    if (captureDeviceIndex != -1) {
+        if (captureDeviceIndex < (int)g_State.captureDeviceCount) {
+            deviceConfig.capture.pDeviceID = &g_State.pCaptureDevices[captureDeviceIndex].id;
+        } else {
+            printf("Invalid capture device index %d. Using default device.\n", captureDeviceIndex);
+        }
+    }
+
     result = ma_device_init(&g_State.context, &deviceConfig, &g_State.device);
     if (result != MA_SUCCESS) {
         printf("Failed to initialize device: %s.\n", ma_result_description(result));
@@ -609,45 +760,62 @@ int main(int argc, char** argv)
         goto done;
     }
 
+    if (ma_device_get_threading_mode(&g_State.device) == MA_THREADING_MODE_SINGLE_THREADED) {
+        printf("Running in single-threaded mode. Press Ctrl+C to quit.\n");
+    }
+
     /* Now we just keep looping and wait for user input. */
     for (;;) {
         if (interactive) {
-            int c;
-
-            if (ma_device_is_started(&g_State.device)) {
-                printf("Press Q to quit, P to pause.\n");
-            } else {
-                printf("Press Q to quit, P to resume.\n");
-            }
-            
-            for (;;) {
-                c = getchar();
-                if (c != '\n') {
+            if (ma_device_get_threading_mode(&g_State.device) == MA_THREADING_MODE_MULTI_THREADED) {
+                int c;
+    
+                if (ma_device_is_started(&g_State.device)) {
+                    printf("Press Q to quit, P to pause.\n");
+                } else {
+                    printf("Press Q to quit, P to resume.\n");
+                }
+                
+                for (;;) {
+                    c = getchar();
+                    if (c != '\n') {
+                        break;
+                    }
+                }
+                
+                if (c == 'q' || c == 'Q') {
+                    g_State.wantsToClose = MA_TRUE;
                     break;
                 }
-            }
-            
-            if (c == 'q' || c == 'Q') {
-                g_State.wantsToClose = MA_TRUE;
-                break;
-            }
-            if (c == 'p' || c == 'P') {
-                if (ma_device_is_started(&g_State.device)) {
-                    result = ma_device_stop(&g_State.device);
-                    if (result != MA_SUCCESS) {
-                        printf("ERROR: Error when stopping the device: %s\n", ma_result_description(result));
+                if (c == 'p' || c == 'P') {
+                    if (ma_device_is_started(&g_State.device)) {
+                        result = ma_device_stop(&g_State.device);
+                        if (result != MA_SUCCESS) {
+                            printf("ERROR: Error when stopping the device: %s\n", ma_result_description(result));
+                        }
+                    } else {
+                        result = ma_device_start(&g_State.device);
+                        if (result != MA_SUCCESS) {
+                            printf("ERROR: Error when starting the device: %s\n", ma_result_description(result));
+                        }
                     }
-                } else {
-                    result = ma_device_start(&g_State.device);
-                    if (result != MA_SUCCESS) {
-                        printf("ERROR: Error when starting the device: %s\n", ma_result_description(result));
-                    }
+                }
+            } else {
+                /* Single-threaded mode. Just sleep for a bit and check if we want to close. */
+                ma_device_step(&g_State.device, MA_BLOCKING_MODE_BLOCKING);
+
+                if (g_State.wantsToClose) {
+                    break;
                 }
             }
         } else {
             /* Running in auto-close mode. Just sleep for a bit. The data callback will control when this loop aborts. */
             if (g_State.wantsToClose) {
                 break;
+            }
+
+            if (ma_device_get_threading_mode(&g_State.device) == MA_THREADING_MODE_SINGLE_THREADED) {
+                ma_device_step(&g_State.device, MA_BLOCKING_MODE_BLOCKING);
             }
 
             /*

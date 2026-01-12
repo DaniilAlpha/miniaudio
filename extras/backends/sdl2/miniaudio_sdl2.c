@@ -1,48 +1,48 @@
 /*
 This implements a full-featured SDL2 backend. It's intentionally built using the same paradigms as the built-in backends in order to make
-it suitable as a solid basis for a custom implementation. The SDL2 backend can be disabled with MA_NO_SDL, exactly like the built-in
+it suitable as a solid basis for a custom implementation. The SDL2 backend can be disabled with MA_NO_SDL2, exactly like the built-in
 backends. It supports both runtime and compile-time linking and respects the MA_NO_RUNTIME_LINKING option. It also works on Emscripten
 which requires the `-s USE_SDL=2` option.
 */
-#ifndef miniaudio_backend_sdl_c
-#define miniaudio_backend_sdl_c
+#ifndef miniaudio_backend_sdl2_c
+#define miniaudio_backend_sdl2_c
 
 /* Include miniaudio.h if we're not including this file after the implementation. */
 #if !defined(MINIAUDIO_IMPLEMENTATION) && !defined(MA_IMPLEMENTATION)
 #include "../../../miniaudio.h"
 #endif
 
-#include "backend_sdl.h"
+#include "miniaudio_sdl2.h"
 
 #include <string.h> /* memset() */
 #include <assert.h>
 
-#ifndef MA_SDL_ASSERT
-#define MA_SDL_ASSERT(cond) assert(cond)
+#ifndef MA_SDL2_ASSERT
+#define MA_SDL2_ASSERT(cond) assert(cond)
 #endif
 
 /* Support SDL on everything. */
-#define MA_SUPPORT_SDL
+#define MA_SUPPORT_SDL2
 
 /*
-Only enable SDL if it's hasn't been explicitly disabled (MA_NO_SDL) or enabled (MA_ENABLE_SDL with
+Only enable SDL if it's hasn't been explicitly disabled (MA_NO_SDL2) or enabled (MA_ENABLE_SDL with
 MA_ENABLE_ONLY_SPECIFIC_BACKENDS) and it's supported at compile time (MA_SUPPORT_SDL).
 */
-#if defined(MA_SUPPORT_SDL) && !defined(MA_NO_SDL) && (!defined(MA_ENABLE_ONLY_SPECIFIC_BACKENDS) || defined(MA_ENABLE_SDL))
-    #define MA_HAS_SDL
+#if defined(MA_SUPPORT_SDL2) && !defined(MA_NO_SDL2) && (!defined(MA_ENABLE_ONLY_SPECIFIC_BACKENDS) || defined(MA_ENABLE_SDL2))
+    #define MA_HAS_SDL2
 #endif
 
 /* SDL headers are necessary if using compile-time linking. Necessary for Emscripten. */
-#if defined(MA_HAS_SDL)
+#if defined(MA_HAS_SDL2)
     #if defined(MA_NO_RUNTIME_LINKING) || defined(MA_EMSCRIPTEN)
         #ifdef __has_include
             #ifdef MA_EMSCRIPTEN
                 #if !__has_include(<SDL/SDL_audio.h>)
-                    #undef MA_HAS_SDL
+                    #undef MA_HAS_SDL2
                 #endif
             #else
                 #if !__has_include(<SDL2/SDL_audio.h>)
-                    #undef MA_HAS_SDL
+                    #undef MA_HAS_SDL2
                 #endif
             #endif
         #endif
@@ -50,7 +50,7 @@ MA_ENABLE_ONLY_SPECIFIC_BACKENDS) and it's supported at compile time (MA_SUPPORT
 #endif
 
 /* Don't compile in the SDL backend if it's been disabled. */
-#if defined(MA_HAS_SDL)
+#if defined(MA_HAS_SDL2)
 #define MA_SDL_INIT_AUDIO                       0x00000010
 #define MA_AUDIO_U8                             0x0008
 #define MA_AUDIO_S16                            0x8010
@@ -115,26 +115,23 @@ typedef struct
     MA_PFN_SDL_CloseAudioDevice    SDL_CloseAudioDevice;
     MA_PFN_SDL_OpenAudioDevice     SDL_OpenAudioDevice;
     MA_PFN_SDL_PauseAudioDevice    SDL_PauseAudioDevice;
-} ma_context_state_sdl;
+} ma_context_state_sdl2;
 
 typedef struct
 {
+    ma_device_state_async async;
     struct
     {
         int deviceID;
-        ma_format format;
-        ma_uint32 channels;
     } capture;
     struct
     {
         int deviceID;
-        ma_format format;
-        ma_uint32 channels;
     } playback;
-} ma_device_state_sdl;
+} ma_device_state_sdl2;
 
 
-MA_SDL_AudioFormat ma_format_to_sdl(ma_format format)
+MA_SDL_AudioFormat ma_format_to_sdl2(ma_format format)
 {
     switch (format)
     {
@@ -148,7 +145,7 @@ MA_SDL_AudioFormat ma_format_to_sdl(ma_format format)
     }
 }
 
-ma_format ma_format_from_sdl(MA_SDL_AudioFormat format)
+ma_format ma_format_from_sdl2(MA_SDL_AudioFormat format)
 {
     switch (format)
     {
@@ -161,27 +158,30 @@ ma_format ma_format_from_sdl(MA_SDL_AudioFormat format)
 }
 
 
-static ma_context_state_sdl* ma_context_get_backend_state__sdl(ma_context* pContext)
+static ma_context_state_sdl2* ma_context_get_backend_state__sdl2(ma_context* pContext)
 {
-    return (ma_context_state_sdl*)ma_context_get_backend_state(pContext);
+    return (ma_context_state_sdl2*)ma_context_get_backend_state(pContext);
 }
 
-static ma_device_state_sdl* ma_device_get_backend_state__sdl(ma_device* pDevice)
+static ma_device_state_sdl2* ma_device_get_backend_state__sdl2(ma_device* pDevice)
 {
-    return (ma_device_state_sdl*)ma_device_get_backend_state(pDevice);
+    return (ma_device_state_sdl2*)ma_device_get_backend_state(pDevice);
 }
 
 
-static void ma_backend_info__sdl(ma_device_backend_info* pBackendInfo)
+static ma_result ma_device_step__sdl2(ma_device* pDevice, ma_blocking_mode blockingMode);
+
+
+static void ma_backend_info__sdl2(ma_device_backend_info* pBackendInfo)
 {
-    MA_SDL_ASSERT(pBackendInfo != NULL);
+    MA_SDL2_ASSERT(pBackendInfo != NULL);
     pBackendInfo->pName = "SDL2";
 }
 
-static ma_result ma_context_init__sdl(ma_context* pContext, const void* pContextBackendConfig, void** ppContextState)
+static ma_result ma_context_init__sdl2(ma_context* pContext, const void* pContextBackendConfig, void** ppContextState)
 {
-    ma_context_state_sdl* pContextStateSDL;
-    const ma_context_config_sdl* pContextConfigSDL = (ma_context_config_sdl*)pContextBackendConfig;
+    ma_context_state_sdl2* pContextStateSDL;
+    const ma_context_config_sdl2* pContextConfigSDL = (ma_context_config_sdl2*)pContextBackendConfig;
     ma_log* pLog = ma_context_get_log(pContext);
     int resultSDL;
 
@@ -190,7 +190,7 @@ static ma_result ma_context_init__sdl(ma_context* pContext, const void* pContext
 
 
     /* Allocate our SDL-specific context data. */
-    pContextStateSDL = (ma_context_state_sdl*)ma_calloc(sizeof(*pContextStateSDL), ma_context_get_allocation_callbacks(pContext));
+    pContextStateSDL = (ma_context_state_sdl2*)ma_calloc(sizeof(*pContextStateSDL), ma_context_get_allocation_callbacks(pContext));
     if (pContextStateSDL == NULL) {
         return MA_OUT_OF_MEMORY;
     }
@@ -264,11 +264,11 @@ static ma_result ma_context_init__sdl(ma_context* pContext, const void* pContext
     return MA_SUCCESS;
 }
 
-static void ma_context_uninit__sdl(ma_context* pContext)
+static void ma_context_uninit__sdl2(ma_context* pContext)
 {
-    ma_context_state_sdl* pContextStateSDL = ma_context_get_backend_state__sdl(pContext);
+    ma_context_state_sdl2* pContextStateSDL = ma_context_get_backend_state__sdl2(pContext);
 
-    MA_SDL_ASSERT(pContextStateSDL != NULL);
+    MA_SDL2_ASSERT(pContextStateSDL != NULL);
 
     pContextStateSDL->SDL_QuitSubSystem(MA_SDL_INIT_AUDIO);
 
@@ -279,9 +279,9 @@ static void ma_context_uninit__sdl(ma_context* pContext)
     ma_free(pContextStateSDL, ma_context_get_allocation_callbacks(pContext));
 }
 
-static void ma_add_native_format_from_AudioSpec__sdl(ma_device_info* pDeviceInfo, const MA_SDL_AudioSpec* pAudioSpec)
+static void ma_add_native_format_from_AudioSpec__sdl2(ma_device_info* pDeviceInfo, const MA_SDL_AudioSpec* pAudioSpec)
 {
-    pDeviceInfo->nativeDataFormats[pDeviceInfo->nativeDataFormatCount].format     = ma_format_from_sdl(pAudioSpec->format);
+    pDeviceInfo->nativeDataFormats[pDeviceInfo->nativeDataFormatCount].format     = ma_format_from_sdl2(pAudioSpec->format);
     pDeviceInfo->nativeDataFormats[pDeviceInfo->nativeDataFormatCount].channels   = pAudioSpec->channels;
     pDeviceInfo->nativeDataFormats[pDeviceInfo->nativeDataFormatCount].sampleRate = pAudioSpec->freq;
     pDeviceInfo->nativeDataFormats[pDeviceInfo->nativeDataFormatCount].flags      = 0;
@@ -294,26 +294,40 @@ static void ma_add_native_format_from_AudioSpec__sdl(ma_device_info* pDeviceInfo
     pDeviceInfo->nativeDataFormatCount = 1;
 }
 
-static ma_result ma_context_enumerate_devices__sdl(ma_context* pContext, ma_enum_devices_callback_proc callback, void* pCallbackUserData)
+static ma_result ma_context_enumerate_devices__sdl2(ma_context* pContext, ma_enum_devices_callback_proc callback, void* pCallbackUserData)
 {
-    ma_context_state_sdl* pContextStateSDL = ma_context_get_backend_state__sdl(pContext);
+    ma_context_state_sdl2* pContextStateSDL = ma_context_get_backend_state__sdl2(pContext);
     ma_device_enumeration_result cbResult = MA_DEVICE_ENUMERATION_CONTINUE;
+    MA_SDL_AudioSpec defaultAudioSpec;
+    ma_device_info deviceInfo;
+    int deviceCount;
     int iDevice;
 
-    MA_SDL_ASSERT(pContextStateSDL != NULL);
+    MA_SDL2_ASSERT(pContextStateSDL != NULL);
 
     /* Playback */
     if (cbResult == MA_DEVICE_ENUMERATION_CONTINUE) {
-        int deviceCount = pContextStateSDL->SDL_GetNumAudioDevices(0);
-        for (iDevice = 0; iDevice < deviceCount; ++iDevice) {
-            ma_device_info deviceInfo;
+        ma_bool32 hasDefaultPlaybackDeviceBeenEnumerated = MA_FALSE;
+        ma_bool32 hasDefaultPlaybackDevice;
+        char* pDefaultPlaybackDeviceName = NULL;
+
+        hasDefaultPlaybackDevice = pContextStateSDL->SDL_GetDefaultAudioInfo(&pDefaultPlaybackDeviceName, &defaultAudioSpec, 0) == 0;
+
+        deviceCount = pContextStateSDL->SDL_GetNumAudioDevices(0);
+        for (iDevice = 0; iDevice < deviceCount; iDevice += 1) {
             MA_SDL_AudioSpec audioSpec;
 
             memset(&deviceInfo, 0, sizeof(deviceInfo));
 
-            /* Default. */
-            if (iDevice == 0) { /* <-- Is this correct? Should we instead compare against the name from SDL_GetDefaultAudioInfo()? */
-                deviceInfo.isDefault = MA_TRUE;
+            /* Default. For SDL2 we'll just use the first device that matches the default device name. */
+            if (!hasDefaultPlaybackDeviceBeenEnumerated && hasDefaultPlaybackDevice) {
+                const char* pDeviceName = pContextStateSDL->SDL_GetAudioDeviceName(iDevice, 0);
+                if (strcmp(pDeviceName, pDefaultPlaybackDeviceName) == 0) {
+                    deviceInfo.isDefault = MA_TRUE;
+                    hasDefaultPlaybackDeviceBeenEnumerated = MA_TRUE;
+                }
+            } else {
+                deviceInfo.isDefault = MA_FALSE;
             }
 
             /* ID. */
@@ -325,7 +339,7 @@ static ma_result ma_context_enumerate_devices__sdl(ma_context* pContext, ma_enum
             /* Data Format. */
             if (pContextStateSDL->SDL_GetAudioDeviceSpec != NULL) {
                 if (pContextStateSDL->SDL_GetAudioDeviceSpec(iDevice, 0, &audioSpec) == 0) {
-                    ma_add_native_format_from_AudioSpec__sdl(&deviceInfo, &audioSpec);
+                    ma_add_native_format_from_AudioSpec__sdl2(&deviceInfo, &audioSpec);
                 }
             } else {
                 /* No way to retrieve the data format. Just report support for everything. */
@@ -337,20 +351,49 @@ static ma_result ma_context_enumerate_devices__sdl(ma_context* pContext, ma_enum
                 break;
             }
         }
+
+        /* SDL2 does not flag the default playback device so we'll enumerate an explicit default device here. */
+        if (cbResult == MA_DEVICE_ENUMERATION_CONTINUE && !hasDefaultPlaybackDeviceBeenEnumerated) {
+            memset(&deviceInfo, 0, sizeof(deviceInfo));
+            deviceInfo.isDefault = MA_TRUE;
+            deviceInfo.id.custom.i = -1;    /* Special ID for the default device. */
+
+            if (hasDefaultPlaybackDevice) {
+                ma_strncpy_s(deviceInfo.name, sizeof(deviceInfo.name), pDefaultPlaybackDeviceName, (size_t)-1);
+                ma_add_native_format_from_AudioSpec__sdl2(&deviceInfo, &defaultAudioSpec);
+            } else {
+                /* No way to retrieve the data format. Just report support for everything. */
+                ma_strncpy_s(deviceInfo.name, sizeof(deviceInfo.name), "Default Playback Device", (size_t)-1);
+                deviceInfo.nativeDataFormatCount = 1;
+            }
+
+            cbResult = callback(ma_device_type_playback, &deviceInfo, pCallbackUserData);
+        }
     }
 
     /* Capture */
     if (cbResult == MA_DEVICE_ENUMERATION_CONTINUE) {
-        int deviceCount = pContextStateSDL->SDL_GetNumAudioDevices(1);
-        for (iDevice = 0; iDevice < deviceCount; ++iDevice) {
-            ma_device_info deviceInfo;
+        ma_bool32 hasDefaultCaptureDeviceBeenEnumerated = MA_FALSE;
+        ma_bool32 hasDefaultCaptureDevice;
+        char* pDefaultCaptureDeviceName = NULL;
+
+        hasDefaultCaptureDevice = pContextStateSDL->SDL_GetDefaultAudioInfo(&pDefaultCaptureDeviceName, &defaultAudioSpec, 1) == 0;
+
+        deviceCount = pContextStateSDL->SDL_GetNumAudioDevices(1);
+        for (iDevice = 0; iDevice < deviceCount; iDevice += 1) {
             MA_SDL_AudioSpec audioSpec;
 
             memset(&deviceInfo, 0, sizeof(deviceInfo));
 
-            /* Default. */
-            if (iDevice == 0) { /* <-- Is this correct? Should we instead compare against the name from SDL_GetDefaultAudioInfo()? */
-                deviceInfo.isDefault = MA_TRUE;
+            /* Default. For SDL2 we'll just use the first device that matches the default device name. */
+            if (!hasDefaultCaptureDeviceBeenEnumerated && hasDefaultCaptureDevice) {
+                const char* pDeviceName = pContextStateSDL->SDL_GetAudioDeviceName(iDevice, 1);
+                if (strcmp(pDeviceName, pDefaultCaptureDeviceName) == 0) {
+                    deviceInfo.isDefault = MA_TRUE;
+                    hasDefaultCaptureDeviceBeenEnumerated = MA_TRUE;
+                }
+            } else {
+                deviceInfo.isDefault = MA_FALSE;
             }
 
             /* ID. */
@@ -362,7 +405,7 @@ static ma_result ma_context_enumerate_devices__sdl(ma_context* pContext, ma_enum
             /* Data Format. */
             if (pContextStateSDL->SDL_GetAudioDeviceSpec != NULL) {
                 if (pContextStateSDL->SDL_GetAudioDeviceSpec(iDevice, 1, &audioSpec) == 0) {
-                    ma_add_native_format_from_AudioSpec__sdl(&deviceInfo, &audioSpec);
+                    ma_add_native_format_from_AudioSpec__sdl2(&deviceInfo, &audioSpec);
                 }
             } else {
                 /* No way to retrieve the data format. Just report support for everything. */
@@ -374,27 +417,46 @@ static ma_result ma_context_enumerate_devices__sdl(ma_context* pContext, ma_enum
                 break;
             }
         }
+
+        /* SDL2 does not flag the default playback device so we'll enumerate an explicit default device here. */
+        if (cbResult == MA_DEVICE_ENUMERATION_CONTINUE && !hasDefaultCaptureDeviceBeenEnumerated) {
+            memset(&deviceInfo, 0, sizeof(deviceInfo));
+            deviceInfo.isDefault = MA_TRUE;
+            deviceInfo.id.custom.i = -1;    /* Special ID for the default device. */
+
+            if (hasDefaultCaptureDevice) {
+                ma_strncpy_s(deviceInfo.name, sizeof(deviceInfo.name), pDefaultCaptureDeviceName, (size_t)-1);
+                ma_add_native_format_from_AudioSpec__sdl2(&deviceInfo, &defaultAudioSpec);
+            } else {
+                /* No way to retrieve the data format. Just report support for everything. */
+                ma_strncpy_s(deviceInfo.name, sizeof(deviceInfo.name), "Default Capture Device", (size_t)-1);
+                deviceInfo.nativeDataFormatCount = 1;
+            }
+
+            cbResult = callback(ma_device_type_capture, &deviceInfo, pCallbackUserData);
+            (void)cbResult; /* Silence a static analysis warning. Want to keep this assignment in case we extend this logic later. */
+        }
     }
 
     return MA_SUCCESS;
 }
 
 
-void ma_audio_callback_capture__sdl(void* pUserData, ma_uint8* pBuffer, int bufferSizeInBytes)
+void ma_audio_callback_capture__sdl2(void* pUserData, ma_uint8* pBuffer, int bufferSizeInBytes)
 {
     ma_device* pDevice = (ma_device*)pUserData;
-    ma_device_state_sdl* pDeviceStateSDL = ma_device_get_backend_state__sdl(pDevice);
-    ma_device_handle_backend_data_callback(pDevice, NULL, pBuffer, (ma_uint32)bufferSizeInBytes / ma_get_bytes_per_frame(pDeviceStateSDL->capture.format, pDeviceStateSDL->capture.channels));
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    ma_device_state_async_process(&pDeviceStateSDL->async, pDevice, NULL, pBuffer, (ma_uint32)bufferSizeInBytes / ma_get_bytes_per_frame(pDeviceStateSDL->async.capture.format, pDeviceStateSDL->async.capture.channels));
 }
 
-void ma_audio_callback_playback__sdl(void* pUserData, ma_uint8* pBuffer, int bufferSizeInBytes)
+void ma_audio_callback_playback__sdl2(void* pUserData, ma_uint8* pBuffer, int bufferSizeInBytes)
 {
     ma_device* pDevice = (ma_device*)pUserData;
-    ma_device_state_sdl* pDeviceStateSDL = ma_device_get_backend_state__sdl(pDevice);
-    ma_device_handle_backend_data_callback(pDevice, pBuffer, NULL, (ma_uint32)bufferSizeInBytes / ma_get_bytes_per_frame(pDeviceStateSDL->playback.format, pDeviceStateSDL->playback.channels));
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    ma_device_state_async_process(&pDeviceStateSDL->async, pDevice, pBuffer, NULL, (ma_uint32)bufferSizeInBytes / ma_get_bytes_per_frame(pDeviceStateSDL->async.playback.format, pDeviceStateSDL->async.playback.channels));
 }
 
-static ma_result ma_device_init_internal__sdl(ma_device* pDevice, ma_context_state_sdl* pContextStateSDL, ma_device_state_sdl* pDeviceStateSDL, const ma_device_config_sdl* pDeviceConfigSDL, ma_device_type deviceType, ma_device_descriptor* pDescriptor)
+static ma_result ma_device_init_internal__sdl2(ma_device* pDevice, ma_context_state_sdl2* pContextStateSDL, ma_device_state_sdl2* pDeviceStateSDL, const ma_device_config_sdl2* pDeviceConfigSDL, ma_device_type deviceType, ma_device_descriptor* pDescriptor)
 {
     MA_SDL_AudioSpec desiredSpec;
     MA_SDL_AudioSpec obtainedSpec;
@@ -440,10 +502,10 @@ static ma_result ma_device_init_internal__sdl(ma_device* pDevice, ma_context_sta
     /* We now have enough information to set up the device. */
     memset(&desiredSpec, 0, sizeof(desiredSpec));
     desiredSpec.freq     = (int)pDescriptor->sampleRate;
-    desiredSpec.format   = ma_format_to_sdl(pDescriptor->format);
+    desiredSpec.format   = ma_format_to_sdl2(pDescriptor->format);
     desiredSpec.channels = (ma_uint8)pDescriptor->channels;
     desiredSpec.samples  = (ma_uint16)pDescriptor->periodSizeInFrames;
-    desiredSpec.callback = (deviceType == ma_device_type_capture) ? ma_audio_callback_capture__sdl : ma_audio_callback_playback__sdl;
+    desiredSpec.callback = (deviceType == ma_device_type_capture) ? ma_audio_callback_capture__sdl2 : ma_audio_callback_playback__sdl2;
     desiredSpec.userdata = pDevice;
 
     /* We'll fall back to f32 if we don't have an appropriate mapping between SDL and miniaudio. */
@@ -451,8 +513,9 @@ static ma_result ma_device_init_internal__sdl(ma_device* pDevice, ma_context_sta
         desiredSpec.format = MA_AUDIO_F32;
     }
 
+    /* We explicitly want the device name to be NULL for the default device. Otherwise we'll grab the name from the device index. */
     pDeviceName = NULL;
-    if (pDescriptor->pDeviceID != NULL) {
+    if (pDescriptor->pDeviceID != NULL && pDescriptor->pDeviceID->custom.i != -1) {
         pDeviceName = pContextStateSDL->SDL_GetAudioDeviceName(pDescriptor->pDeviceID->custom.i, (deviceType == ma_device_type_playback) ? 0 : 1);
     }
 
@@ -463,7 +526,7 @@ static ma_result ma_device_init_internal__sdl(ma_device* pDevice, ma_context_sta
     }
 
     /* The descriptor needs to be updated with our actual settings. */
-    pDescriptor->format             = ma_format_from_sdl(obtainedSpec.format);
+    pDescriptor->format             = ma_format_from_sdl2(obtainedSpec.format);
     pDescriptor->channels           = obtainedSpec.channels;
     pDescriptor->sampleRate         = (ma_uint32)obtainedSpec.freq;
     ma_channel_map_init_standard(ma_standard_channel_map_default, pDescriptor->channelMap, ma_countof(pDescriptor->channelMap), pDescriptor->channels);
@@ -472,22 +535,18 @@ static ma_result ma_device_init_internal__sdl(ma_device* pDevice, ma_context_sta
 
     if (deviceType == ma_device_type_playback) {
         pDeviceStateSDL->playback.deviceID = deviceID;
-        pDeviceStateSDL->playback.format   = pDescriptor->format;
-        pDeviceStateSDL->playback.channels = pDescriptor->channels;
     } else {
-        pDeviceStateSDL->capture.deviceID  = deviceID;
-        pDeviceStateSDL->capture.format    = pDescriptor->format;
-        pDeviceStateSDL->capture.channels  = pDescriptor->channels;
+        pDeviceStateSDL->capture.deviceID = deviceID;
     }
 
     return MA_SUCCESS;
 }
 
-static ma_result ma_device_init__sdl(ma_device* pDevice, const void* pDeviceBackendConfig, ma_device_descriptor* pDescriptorPlayback, ma_device_descriptor* pDescriptorCapture, void** ppDeviceState)
+static ma_result ma_device_init__sdl2(ma_device* pDevice, const void* pDeviceBackendConfig, ma_device_descriptor* pDescriptorPlayback, ma_device_descriptor* pDescriptorCapture, void** ppDeviceState)
 {
-    ma_device_state_sdl* pDeviceStateSDL;
-    ma_device_config_sdl* pDeviceConfigSDL = (ma_device_config_sdl*)pDeviceBackendConfig;
-    ma_context_state_sdl* pContextStateSDL = ma_context_get_backend_state__sdl(ma_device_get_context(pDevice));
+    ma_device_state_sdl2* pDeviceStateSDL;
+    ma_device_config_sdl2* pDeviceConfigSDL = (ma_device_config_sdl2*)pDeviceBackendConfig;
+    ma_context_state_sdl2* pContextStateSDL = ma_context_get_backend_state__sdl2(ma_device_get_context(pDevice));
     ma_device_type deviceType = ma_device_get_type(pDevice);
     ma_result result;
     
@@ -497,13 +556,13 @@ static ma_result ma_device_init__sdl(ma_device* pDevice, const void* pDeviceBack
     }
 
     /* We need to allocate our backend-specific data. */
-    pDeviceStateSDL = (ma_device_state_sdl*)ma_calloc(sizeof(*pDeviceStateSDL), ma_device_get_allocation_callbacks(pDevice));
+    pDeviceStateSDL = (ma_device_state_sdl2*)ma_calloc(sizeof(*pDeviceStateSDL), ma_device_get_allocation_callbacks(pDevice));
     if (pDeviceStateSDL == NULL) {
         return MA_OUT_OF_MEMORY;
     }
 
     if (deviceType == ma_device_type_capture || deviceType == ma_device_type_duplex) {
-        result = ma_device_init_internal__sdl(pDevice, pContextStateSDL, pDeviceStateSDL, pDeviceConfigSDL, ma_device_type_capture, pDescriptorCapture);
+        result = ma_device_init_internal__sdl2(pDevice, pContextStateSDL, pDeviceStateSDL, pDeviceConfigSDL, ma_device_type_capture, pDescriptorCapture);
         if (result != MA_SUCCESS) {
             ma_free(pDeviceStateSDL, ma_device_get_allocation_callbacks(pDevice));
             return result;
@@ -511,7 +570,7 @@ static ma_result ma_device_init__sdl(ma_device* pDevice, const void* pDeviceBack
     }
 
     if (deviceType == ma_device_type_playback || deviceType == ma_device_type_duplex) {
-        result = ma_device_init_internal__sdl(pDevice, pContextStateSDL, pDeviceStateSDL, pDeviceConfigSDL, ma_device_type_playback, pDescriptorPlayback);
+        result = ma_device_init_internal__sdl2(pDevice, pContextStateSDL, pDeviceStateSDL, pDeviceConfigSDL, ma_device_type_playback, pDescriptorPlayback);
         if (result != MA_SUCCESS) {
             if (deviceType == ma_device_type_duplex) {
                 pContextStateSDL->SDL_CloseAudioDevice(pDeviceStateSDL->capture.deviceID);
@@ -522,15 +581,28 @@ static ma_result ma_device_init__sdl(ma_device* pDevice, const void* pDeviceBack
         }
     }
 
+    result = ma_device_state_async_init(deviceType, pDescriptorPlayback, pDescriptorCapture, ma_device_get_allocation_callbacks(pDevice), &pDeviceStateSDL->async);
+    if (result != MA_SUCCESS) {
+        if (deviceType == ma_device_type_capture || deviceType == ma_device_type_duplex) {
+            pContextStateSDL->SDL_CloseAudioDevice(pDeviceStateSDL->capture.deviceID);
+        }
+        if (deviceType == ma_device_type_playback || deviceType == ma_device_type_duplex) {
+            pContextStateSDL->SDL_CloseAudioDevice(pDeviceStateSDL->playback.deviceID);
+        }
+
+        ma_free(pDeviceStateSDL, ma_device_get_allocation_callbacks(pDevice));
+        return result;
+    }
+
     *ppDeviceState = pDeviceStateSDL;
 
     return MA_SUCCESS;
 }
 
-static void ma_device_uninit__sdl(ma_device* pDevice)
+static void ma_device_uninit__sdl2(ma_device* pDevice)
 {
-    ma_device_state_sdl* pDeviceStateSDL = ma_device_get_backend_state__sdl(pDevice);
-    ma_context_state_sdl* pContextStateSDL = ma_context_get_backend_state__sdl(ma_device_get_context(pDevice));
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    ma_context_state_sdl2* pContextStateSDL = ma_context_get_backend_state__sdl2(ma_device_get_context(pDevice));
     ma_device_type deviceType = ma_device_get_type(pDevice);
 
     if (deviceType == ma_device_type_capture || deviceType == ma_device_type_duplex) {
@@ -541,14 +613,19 @@ static void ma_device_uninit__sdl(ma_device* pDevice)
         pContextStateSDL->SDL_CloseAudioDevice(pDeviceStateSDL->playback.deviceID);
     }
 
+    ma_device_state_async_uninit(&pDeviceStateSDL->async, ma_device_get_allocation_callbacks(pDevice));
+
     ma_free(pDeviceStateSDL, ma_device_get_allocation_callbacks(pDevice));
 }
 
-static ma_result ma_device_start__sdl(ma_device* pDevice)
+static ma_result ma_device_start__sdl2(ma_device* pDevice)
 {
-    ma_device_state_sdl* pDeviceStateSDL = ma_device_get_backend_state__sdl(pDevice);
-    ma_context_state_sdl* pContextStateSDL = ma_context_get_backend_state__sdl(ma_device_get_context(pDevice));
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    ma_context_state_sdl2* pContextStateSDL = ma_context_get_backend_state__sdl2(ma_device_get_context(pDevice));
     ma_device_type deviceType = ma_device_get_type(pDevice);
+
+    /* Step the device once to ensure buffers are pre-filled before starting. */
+    ma_device_step__sdl2(pDevice, MA_BLOCKING_MODE_NON_BLOCKING);
 
     if (deviceType == ma_device_type_capture || deviceType == ma_device_type_duplex) {
         pContextStateSDL->SDL_PauseAudioDevice(pDeviceStateSDL->capture.deviceID, 0);
@@ -561,10 +638,10 @@ static ma_result ma_device_start__sdl(ma_device* pDevice)
     return MA_SUCCESS;
 }
 
-static ma_result ma_device_stop__sdl(ma_device* pDevice)
+static ma_result ma_device_stop__sdl2(ma_device* pDevice)
 {
-    ma_device_state_sdl* pDeviceStateSDL = ma_device_get_backend_state__sdl(pDevice);
-    ma_context_state_sdl* pContextStateSDL = ma_context_get_backend_state__sdl(ma_device_get_context(pDevice));
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    ma_context_state_sdl2* pContextStateSDL = ma_context_get_backend_state__sdl2(ma_device_get_context(pDevice));
     ma_device_type deviceType = ma_device_get_type(pDevice);
 
     if (deviceType == ma_device_type_capture || deviceType == ma_device_type_duplex) {
@@ -578,41 +655,55 @@ static ma_result ma_device_stop__sdl(ma_device* pDevice)
     return MA_SUCCESS;
 }
 
-
-static ma_device_backend_vtable ma_gDeviceBackendVTable_SDL =
+static ma_result ma_device_step__sdl2(ma_device* pDevice, ma_blocking_mode blockingMode)
 {
-    ma_backend_info__sdl,
-    ma_context_init__sdl,
-    ma_context_uninit__sdl,
-    ma_context_enumerate_devices__sdl,
-    ma_device_init__sdl,
-    ma_device_uninit__sdl,
-    ma_device_start__sdl,
-    ma_device_stop__sdl,
-    NULL,   /* onDeviceRead */
-    NULL,   /* onDeviceWrite */
-    NULL,   /* onDeviceLoop */
-    NULL    /* onDeviceWakeup */
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    return ma_device_state_async_step(&pDeviceStateSDL->async, pDevice, blockingMode, NULL);
+}
+
+static void ma_device_wakeup__sdl2(ma_device* pDevice)
+{
+    ma_device_state_sdl2* pDeviceStateSDL = ma_device_get_backend_state__sdl2(pDevice);
+    ma_device_state_async_release(&pDeviceStateSDL->async);
+}
+
+static ma_device_backend_vtable ma_gDeviceBackendVTable_SDL2 =
+{
+    ma_backend_info__sdl2,
+    ma_context_init__sdl2,
+    ma_context_uninit__sdl2,
+    ma_context_enumerate_devices__sdl2,
+    ma_device_init__sdl2,
+    ma_device_uninit__sdl2,
+    ma_device_start__sdl2,
+    ma_device_stop__sdl2,
+    ma_device_step__sdl2,
+    ma_device_wakeup__sdl2
 };
 
-ma_device_backend_vtable* ma_device_backend_sdl = &ma_gDeviceBackendVTable_SDL;
+ma_device_backend_vtable* ma_device_backend_sdl2 = &ma_gDeviceBackendVTable_SDL2;
 #else
-ma_device_backend_vtable* ma_device_backend_sdl = NULL;
-#endif  /* MA_HAS_SDL */
+ma_device_backend_vtable* ma_device_backend_sdl2 = NULL;
+#endif  /* MA_HAS_SDL2 */
 
-
-MA_API ma_context_config_sdl ma_context_config_sdl_init(void)
+MA_API ma_device_backend_vtable* ma_sdl2_get_vtable(void)
 {
-    ma_context_config_sdl config;
+    return ma_device_backend_sdl2;
+}
+
+
+MA_API ma_context_config_sdl2 ma_context_config_sdl2_init(void)
+{
+    ma_context_config_sdl2 config;
 
     memset(&config, 0, sizeof(config));
 
     return config;
 }
 
-MA_API ma_device_config_sdl ma_device_config_sdl_init(void)
+MA_API ma_device_config_sdl2 ma_device_config_sdl2_init(void)
 {
-    ma_device_config_sdl config;
+    ma_device_config_sdl2 config;
 
     memset(&config, 0, sizeof(config));
 
@@ -620,4 +711,4 @@ MA_API ma_device_config_sdl ma_device_config_sdl_init(void)
 }
 
 
-#endif  /* miniaudio_backend_sdl_c */
+#endif  /* miniaudio_backend_sdl2_c */
