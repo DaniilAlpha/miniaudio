@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.10)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(IOS TRUE)
+endif()
+cmake_minimum_required(VERSION 3.18)
 
 # Extract version from miniaudio.h
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio.h" MINIAUDIO_HEADER_CONTENTS)
@@ -10,8 +13,9 @@ string(REGEX MATCH "#define MA_VERSION_REVISION[ \t]+([0-9]+)" _revision_match "
 set(MA_VERSION_REVISION "${CMAKE_MATCH_1}")
 set(MINIAUDIO_VERSION "${MA_VERSION_MAJOR}.${MA_VERSION_MINOR}.${MA_VERSION_REVISION}")
 
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(IOS)
     set(LANGS OBJC)
+    set_source_files_properties(miniaudio.c PROPERTIES LANGUAGE OBJC)
 else()
     set(LANGS C CXX)
 endif()
