@@ -710,7 +710,7 @@ if(MINIAUDIO_NO_RUNTIME_LINKING)
 endif()
 
 if(IOS)
-    target_link_libraries(miniaudio "-framework AVFoundation")
+    target_link_libraries(miniaudio "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreFoundation" "-framework CoreAudio")
 endif()
 
 # Tests
