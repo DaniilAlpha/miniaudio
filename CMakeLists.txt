@@ -818,6 +818,10 @@ if(MINIAUDIO_NO_RUNTIME_LINKING)
     endif()
 endif()
 
+if(IOS)
+    target_link_libraries(miniaudio "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreFoundation" "-framework CoreAudio" "-framework Foundation")
+endif()
+
 # Tests
 #
 # All tests are compiled as a single translation unit. There is no need to add miniaudio as a link library.
